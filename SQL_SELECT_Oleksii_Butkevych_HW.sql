@@ -32,7 +32,7 @@ INNER JOIN public.film_category fc ON fc.film_id = f.film_id
 INNER JOIN public.category c ON c.category_id = fc.category_id 
 WHERE 	f.release_year BETWEEN 2017 AND 2019 AND 
 		f.rental_rate > 1 AND 
-		c."name"  = 'Animation'
+		UPPER(c."name")  = UPPER('Animation')
 ORDER BY f.title ASC;
 
 --1.1. CTE solution.
@@ -45,7 +45,7 @@ WITH animation_films AS (
 	FROM public.film f 
 	INNER JOIN public.film_category fc ON fc.film_id = f.film_id
 	INNER JOIN public.category c ON c.category_id = fc.category_id 
-	WHERE 	c."name"  = 'Animation'
+	WHERE 	UPPER(c."name")  = UPPER('Animation')
 	)
 
 SELECT 	film_id, 
@@ -72,7 +72,7 @@ WHERE 	f.release_year BETWEEN 2017 AND 2019 AND
 		c.category_id IN (
 			SELECT category_id 
 			FROM public.category
-			WHERE "name" = 'Animation'
+			WHERE UPPER("name") = UPPER('Animation')
 			)
 ORDER BY f.title ASC;
 
@@ -199,30 +199,33 @@ Subquery version is functionally fine, but less clear and slightly more resource
 --Show top-5 actors by number of movies (released after 2015) they took part in 
 --(columns: first_name, last_name, number_of_movies, sorted by number_of_movies in descending order)
 -- 1.3. JOIN solution.
-SELECT 	a.first_name, 
+SELECT 	a.actor_id,
+		a.first_name, 
 		a.last_name, 
 		COUNT(f.film_id) AS number_of_movies
 FROM public.actor a  
 INNER JOIN public.film_actor fa ON fa.actor_id = a.actor_id 
 INNER JOIN public.film f ON f.film_id = fa.film_id 
 WHERE 	f.release_year > 2015
-GROUP BY a.first_name, a.last_name
+GROUP BY a.actor_id, a.first_name, a.last_name
 ORDER BY number_of_movies DESC
 LIMIT 5;
  
 -- 1.3. CTE solution.
 WITH actor_film_count AS (
-	SELECT 	a.first_name, 
+	SELECT 	a.actor_id,
+			a.first_name, 
 			a.last_name, 
 			COUNT(f.film_id) AS number_of_movies
 	FROM public.actor a  
 	INNER JOIN public.film_actor fa ON fa.actor_id = a.actor_id 
 	INNER JOIN public.film f ON f.film_id = fa.film_id 
 	WHERE 	f.release_year > 2015
-	GROUP BY a.first_name, a.last_name
+	GROUP BY a.actor_id, a.first_name, a.last_name
 		)
 		
-SELECT 	first_name, 
+SELECT 	actor_id,
+		first_name, 
 		last_name, 
 		number_of_movies
 FROM actor_film_count
@@ -230,18 +233,20 @@ ORDER BY number_of_movies DESC
 LIMIT 5;
 
 -- 1.3. Subquery solution
-SELECT 	actor_film.first_name,
+SELECT 	actor_film.actor_id,
+		actor_film.first_name,
 		actor_film.last_name,
 		actor_film.number_of_movies
 FROM (
-	SELECT 	a.first_name, 
+	SELECT 	a.actor_id,
+			a.first_name, 
 			a.last_name, 
 			COUNT(f.film_id) AS number_of_movies
 	FROM public.actor a  
 	INNER JOIN public.film_actor fa ON fa.actor_id = a.actor_id 
 	INNER JOIN public.film f ON f.film_id = fa.film_id 
 	WHERE 	f.release_year > 2015
-	GROUP BY a.first_name, a.last_name
+	GROUP BY a.actor_id, a.first_name, a.last_name
 	) AS actor_film
 ORDER BY actor_film.number_of_movies DESC
 LIMIT 5;
@@ -266,7 +271,7 @@ SELECT 	f.release_year,
 FROM public.film f 
 JOIN public.film_category fc ON fc.film_id = f.film_id 
 JOIN public.category c ON c.category_id = fc.category_id 
-WHERE 	c."name" IN ('Drama','Travel','Documentary')
+WHERE UPPER(c."name") IN (UPPER('Drama'), UPPER('Travel'), UPPER('Documentary'))
 GROUP BY f.release_year
 ORDER BY f.release_year DESC;
 
@@ -277,7 +282,7 @@ WITH filtered_films AS (
 	FROM public.film f 
 	JOIN public.film_category fc ON fc.film_id = f.film_id 
 	JOIN public.category c ON c.category_id = fc.category_id 
-	WHERE 	c."name" IN ('Drama','Travel','Documentary')
+	WHERE	UPPER(c."name") IN (UPPER('Drama'), UPPER('Travel'), UPPER('Documentary'))
 )
 
 SELECT 
@@ -302,7 +307,7 @@ FROM (
 	FROM public.film f
 	JOIN public.film_category fc ON f.film_id = fc.film_id
 	JOIN public.category c ON c.category_id = fc.category_id
-	WHERE c.name IN ('Drama', 'Travel', 'Documentary')
+	WHERE UPPER(c."name") IN (UPPER('Drama'), UPPER('Travel'), UPPER('Documentary'))
 ) AS filtered_films
 GROUP BY filtered_films.release_year
 ORDER BY filtered_films.release_year DESC;
@@ -438,6 +443,7 @@ Subquery version - acceptable and equivalent performance, but less readable and 
 --To determine expected age please use 'Motion Picture Association film rating system'
 -- 2.2. JOIN solution
 SELECT
+	f.film_id,
 	f.title,
 	f.rating,
 	CASE f.rating 
@@ -452,22 +458,24 @@ SELECT
 FROM public.film f
 INNER JOIN public.inventory i ON i.film_id = f.film_id
 INNER JOIN public.rental r ON r.inventory_id = i.inventory_id
-GROUP BY f.title, f.rating
+GROUP BY f.film_id, f.title, f.rating
 ORDER BY count_of_rentals DESC, f.title       
 LIMIT 5;
 
 -- 2.2. CTE solution
 WITH rental_counts AS (
-	SELECT 	f.title,
+	SELECT 	f.film_id,
+			f.title,
 			f.rating,
 			COUNT(r.rental_id) AS count_of_rentals
 	FROM film f
 	JOIN inventory i ON i.film_id = f.film_id
 	JOIN rental r ON r.inventory_id = i.inventory_id
-	GROUP BY f.title, f.rating
+	GROUP BY f.film_id, f.title, f.rating
 )
 
 SELECT 
+	film_id,
 	title,
 	rating,
 	CASE rating
@@ -484,7 +492,8 @@ ORDER BY count_of_rentals DESC, title
 LIMIT 5;
 
 -- 2.2. Subquery solution
-SELECT 	count_of_rentals.title,
+SELECT 	count_of_rentals.film_id,
+		count_of_rentals.title,
 		count_of_rentals.rating,
 		CASE rating
 			WHEN 'G' THEN '0-6+'
@@ -496,13 +505,14 @@ SELECT 	count_of_rentals.title,
 		END AS age_of_group,
 		count_of_rentals.number_of_rentals
 FROM (
-	SELECT 	f.title,
+	SELECT 	f.film_id,
+			f.title,
 			f.rating,
 			COUNT(r.rental_id) AS number_of_rentals
 	FROM film f
 	JOIN inventory i ON i.film_id = f.film_id
 	JOIN rental r ON r.inventory_id = i.inventory_id
-	GROUP BY f.title, f.rating
+	GROUP BY f.film_id,f.title, f.rating
 	) AS count_of_rentals
 ORDER BY count_of_rentals.number_of_rentals DESC, title
 LIMIT 5;
@@ -533,7 +543,8 @@ FROM actor a
 JOIN film_actor fa ON fa.actor_id = a.actor_id
 JOIN film f ON f.film_id = fa.film_id
 GROUP BY a.actor_id, a.first_name, a.last_name
-ORDER BY inactivity_years DESC;
+ORDER BY inactivity_years DESC
+LIMIT 1;
 
 -- 3.1. CTE solution. V1: gap between the latest release_year and current year per each actor;
 WITH actor_latest_release AS (
@@ -553,7 +564,8 @@ SELECT	actor_id,
 		last_release_year,
 		EXTRACT(YEAR FROM CURRENT_DATE) - last_release_year AS inactivity_years
 FROM actor_latest_release
-ORDER BY inactivity_years DESC;
+ORDER BY inactivity_years DESC
+LIMIT 1;
 
 
 -- 3.1. Sunquery solution. V1: gap between the latest release_year and current year per each actor;
@@ -572,7 +584,8 @@ FROM	(
 		JOIN film f ON f.film_id = fa.film_id
 		GROUP BY a.actor_id, a.first_name, a.last_name
 		) AS last_year
-ORDER BY inactivity_years DESC;
+ORDER BY inactivity_years DESC
+LIMIT 1;
 
 /* In the task:
 JOIN version - the best for fast reporting and simple aggregations. 
@@ -615,7 +628,8 @@ WHERE f2.release_year > f1.release_year
 		AND f3.release_year > f1.release_year
 		AND f3.release_year < f2.release_year
 		)
-ORDER BY inactivity_years DESC;
+ORDER BY inactivity_years DESC
+LIMIT 1;
 
 
 
@@ -651,7 +665,8 @@ JOIN actor_films af2  ON af1.actor_id = af2.actor_id AND
 				af3.release_year > af1.release_year AND 
 				af3.release_year < af2.release_year
 				)
-ORDER BY inactivity_years DESC;
+ORDER BY inactivity_years DESC
+LIMIT 1;
 
 
 -- 3.1. Subquery solution. V2: gaps between sequential films per each actor;
@@ -700,7 +715,8 @@ AND NOT EXISTS (
 	af3.release_year > af1.release_year AND 
 	af3.release_year < af2.release_year
 	)
-ORDER BY inactivity_years DESC;
+ORDER BY inactivity_years DESC
+LIMIT 1;
 
 
 /*
