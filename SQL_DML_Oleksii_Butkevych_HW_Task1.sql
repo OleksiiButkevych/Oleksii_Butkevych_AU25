@@ -77,10 +77,6 @@ RETURNING film_id, title, rating, last_update;    -- RETURNING clause helps veri
 COMMIT;
 
 
-
-
-
-
 --Add the real actors who play leading roles in your favorite movies to the 'actor' and 'film_actor' tables (6 or more actors in total). 
 --Actors with the name Actor1, Actor2, etc - will not be taken into account and grade will be reduced by 20%.
 
@@ -146,11 +142,19 @@ SELECT f.film_id,
        END AS store_id,  -- assign store 1 or 2
        CURRENT_TIMESTAMP AS last_update
 FROM public.film f
-WHERE f.title IN ('HOME ALONE', 'THE SHAWSHANK REDEMPTION', 'FORREST GUMP')
+WHERE f.title IN ('HOME ALONE', 'THE SHAWSHANK REDEMPTION', 'FORREST GUMP') AND 
+		NOT EXISTS (
+      		SELECT 1
+      		FROM inventory i
+      		WHERE i.film_id = f.film_id AND 
+      		i.store_id = CASE 
+                            WHEN f.title IN ('HOME ALONE', 'FORREST GUMP') THEN 1 
+                            ELSE 2 
+                         END
+  )
 RETURNING inventory_id, film_id, store_id, last_update;
 
 COMMIT;
-
 
 
 
@@ -188,7 +192,7 @@ SET
     last_update = CURRENT_TIMESTAMP,         -- update timestamp to now
     active      = 1,                         -- mark as active
     activebool  = TRUE                       -- also update boolean active flag if applicable
-WHERE first_name = UPPER('CARMEN') AND last_name = UPPER('OWENS')  -- identify customer by existing name
+WHERE UPPER(first_name) = UPPER('CARMEN') AND UPPER(last_name) = UPPER('OWENS')  -- identify customer by existing name
 RETURNING customer_id, first_name, last_name, store_id, email, address_id, create_date, last_update, active, activebool;
 
 COMMIT;
@@ -204,7 +208,7 @@ BEGIN;
 WITH target_customer AS (
     SELECT customer_id
     FROM public.customer
-    WHERE first_name = UPPER('OLEKSII') AND last_name = UPPER('BUTKEVYCH')
+    WHERE UPPER(first_name) = UPPER('OLEKSII') AND UPPER(last_name) = UPPER('BUTKEVYCH')
 )
 
 -- Step 2: Delete related records from other tables
@@ -215,15 +219,13 @@ WHERE customer_id IN (SELECT customer_id FROM target_customer);
 COMMIT;
 
 
-
-
 -- deleting from payment table. 
 BEGIN;
 
 WITH target_customer AS (
     SELECT customer_id
     FROM public.customer
-    WHERE first_name = UPPER('OLEKSII') AND last_name = UPPER('BUTKEVYCH')
+    WHERE UPPER(first_name) = UPPER('OLEKSII') AND last_name = UPPER('BUTKEVYCH')
 )
 
 DELETE FROM public.payment
@@ -245,11 +247,11 @@ BEGIN;
 WITH oleksii_butkevych AS (
     SELECT customer_id, store_id
     FROM public.customer
-    WHERE first_name = UPPER('OLEKSII') AND last_name = UPPER('BUTKEVYCH')
+    WHERE UPPER(first_name) = UPPER('OLEKSII') AND last_name = UPPER('BUTKEVYCH')
 ),
 
 -- Step 2: Select some inventory from the store(s) customer is in
--- Limit to 3 movies for this example
+-- Limit to 3 emovis for this example
 selected_inventory AS (
     SELECT i.inventory_id, i.store_id
     FROM public.inventory i
@@ -271,6 +273,12 @@ SELECT
     CURRENT_TIMESTAMP
 FROM selected_inventory s
 JOIN oleksii_butkevych o ON s.store_id = o.store_id
+WHERE NOT EXISTS (
+    SELECT 1 
+    FROM public.rental r
+    WHERE r.customer_id = o.customer_id
+      AND r.inventory_id = s.inventory_id
+)
 RETURNING rental_id, inventory_id, customer_id, rental_date, return_date;
 
 COMMIT;
@@ -278,27 +286,35 @@ COMMIT;
 
 -- Step 4: Insert corresponding payments for the rentals
 -- Payment amount: random between 3.99 and 5.99 for demonstration
-
-
 BEGIN;
 
 WITH oleksii_butkevych AS (
-    SELECT customer_id, store_id
+    SELECT customer_id
     FROM public.customer
-    WHERE first_name = UPPER('OLEKSII') AND last_name = UPPER('BUTKEVYCH')
+    WHERE UPPER(first_name) = UPPER('OLEKSII')
+      AND UPPER(last_name)  = UPPER('BUTKEVYCH')
 )
 
-INSERT INTO payment (customer_id, staff_id, rental_id, amount, payment_date)
+INSERT INTO public.payment (customer_id, staff_id, rental_id, amount, payment_date)
 SELECT 
     r.customer_id,
-    r.staff_id,
+    -- pick any staff from the store of the rental's inventory
+    (SELECT s.staff_id 
+     FROM public.staff s 
+     JOIN public.inventory i ON i.store_id = s.store_id
+     WHERE i.inventory_id = r.inventory_id
+     LIMIT 1) AS staff_id,
     r.rental_id,
     3.99 + random() * 2,  -- amount between 3.99 and 5.99
     r.rental_date + (random() * 5) * interval '1 day'  -- payment within 5 days after rental
 FROM public.rental r
 JOIN oleksii_butkevych o ON r.customer_id = o.customer_id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.payment p
+    WHERE p.rental_id = r.rental_id
+)
 RETURNING payment_id, customer_id, rental_id, amount, payment_date;
 
 COMMIT;
-
 
