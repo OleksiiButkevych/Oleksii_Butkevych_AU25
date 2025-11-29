@@ -107,7 +107,9 @@ WITH customers AS (
     JOIN public.city ci       ON ci.country_id = co.country_id
     JOIN public.address a     ON a.city_id = ci.city_id
     JOIN public.customer cu   ON cu.address_id = a.address_id
-    WHERE co.country = ANY (p_countries::text[])
+    WHERE UPPER(co.country) = ANY (
+    ARRAY(SELECT UPPER(c) FROM unnest(p_countries) AS c)
+)
 ),
 film_counts AS (
     SELECT
@@ -146,7 +148,7 @@ SELECT
     f.release_year
 FROM top_film t
 JOIN public.film f       ON f.film_id = (
-    SELECT MAX(film_id) FROM top_film t2 WHERE t2.country = t.country
+    SELECT MAX(film_id) FROM top_film t2 WHERE UPPER(t2.country) = UPPER(t.country)
 )
 JOIN public."language" l ON l.language_id = f.language_id
 GROUP BY t.country, f.title, f.rating, l.name, f."length", f.release_year
@@ -206,7 +208,7 @@ BEGIN
         LEFT JOIN public.rental r ON r.inventory_id = i.inventory_id
         LEFT JOIN public.customer c ON r.customer_id = c.customer_id
         JOIN public."language" l ON l.language_id = f.language_id
-        WHERE f.title ILIKE p_title_pattern
+        WHERE UPPER(f.title) LIKE UPPER(p_title_pattern)
           AND (r.rental_id IS NULL OR r.return_date IS NOT NULL)
         ORDER BY f.title, i.inventory_id
     LOOP
@@ -240,6 +242,10 @@ the rental duration to three days, the replacement cost to 19.99. The release ye
 default should be current year and Klingon respectively. The function should also verify that the language exists 
 in the 'language' table. Then, ensure that no such function has been created before; if so, replace it.
 */
+-- adding UNIQUE constraint to public.language
+ALTER TABLE public."language"
+ADD CONSTRAINT language_name_unique UNIQUE(name);
+
 CREATE OR REPLACE PROCEDURE public.new_movie(
     p_title TEXT,
     p_release_year INT DEFAULT EXTRACT(YEAR FROM CURRENT_DATE)::INT,
@@ -255,15 +261,16 @@ BEGIN
         RAISE EXCEPTION 'Movie title cannot be null or empty';
     END IF;
 
-    -- Verify language exists
+    -- Insert language safely (no duplicates once UNIQUE(name) exists)
+    INSERT INTO public."language"(name)
+    VALUES (p_language_name)
+    ON CONFLICT (name) DO NOTHING;
+
+    -- Retrieve language_id
     SELECT language_id
     INTO v_language_id
     FROM public."language"
-    WHERE name = p_language_name;
-
-    IF v_language_id IS NULL THEN
-        RAISE EXCEPTION 'Language "%" does not exist in the language table', p_language_name;
-    END IF;
+    WHERE UPPER(name) = UPPER(p_language_name);
 
     -- Insert new movie
     INSERT INTO public.film (
@@ -279,32 +286,28 @@ BEGIN
         p_title,
         p_release_year,
         v_language_id,
-        3,          -- rental_duration
-        4.99,       -- rental_rate
-        19.99,      -- replacement_cost
+        3,
+        4.99,
+        19.99,
         now()
     );
 
-    RAISE NOTICE 'Movie "%" added successfully with language "%" and release year %', 
-                 p_title, p_language_name, p_release_year;
+    RAISE NOTICE 'Movie "%" added with language "%" (id %)',
+                 p_title, p_language_name, v_language_id;
 END;
 $$;
 
 
-INSERT INTO public."language"(name, last_update)
-SELECT 'Klingon', CURRENT_DATE
-WHERE NOT EXISTS(
-	SELECT 1 
-	FROM public."language"
-	WHERE "name" = 'Klingon'
-);
-
 CALL public.new_movie('Intergalactic Adventure');
 
-SELECT * FROM film
+SELECT * FROM public.film
 WHERE title LIKE '%ntergalacti%';
 
-CALL public.new_movie('Home_Alone', 1985, 'English'); 
+CALL public.new_movie('Home_Alone', 1985, 'Portuguese'); 
 
-SELECT * FROM film
+SELECT * FROM public.film
 WHERE title = 'Home_Alone';
+
+SELECT *
+FROM public."language";
+
